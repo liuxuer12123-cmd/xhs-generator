@@ -1,0 +1,11 @@
+.next/
+node_modules/
+data/
+.env
+.env.local
+.env.production
+.env.production.local
+*.sqlite
+*.sqlite-journal
+.superpowers/
+tsconfig.tsbuildinfo

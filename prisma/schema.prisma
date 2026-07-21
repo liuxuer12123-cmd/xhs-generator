@@ -1,0 +1,49 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String      @id @default(cuid())
+  email       String      @unique
+  password    String
+  llmConfig   LlmConfig?
+  generations Generation[]
+  createdAt   DateTime    @default(now())
+}
+
+model LlmConfig {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  baseUrl   String
+  apiKey    String
+  modelName String
+  updatedAt DateTime @updatedAt
+}
+
+model Generation {
+  id           String   @id @default(cuid())
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  topic        String
+  extraContent String?
+  templateId   String
+  cardHtml     String
+  titles       String   // JSON array string
+  body         String
+  createdAt    DateTime @default(now())
+}
+
+model GuestUsage {
+  ip        String   @id
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
