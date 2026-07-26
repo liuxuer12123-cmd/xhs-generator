@@ -105,10 +105,13 @@ export function buildCardPrompt(
 - 只输出 HTML 代码，不要任何解释文字，不要 markdown 代码块标记（不要 \`\`\`html）`
 }
 
-export function buildTitlesPrompt(topic: string, suggestion?: string): string {
+export function buildTitlesPrompt(topic: string, bodyContent?: string, suggestion?: string): string {
+  const bodyRef = bodyContent
+    ? `\n\n【参考正文内容（标题必须与以下内容高度呼应，提炼核心卖点）】\n${bodyContent.slice(0, 500)}`
+    : ''
   return `你是小红书爆款标题专家，深度研究过10万+爆款帖子的标题规律。
 根据主题「${topic}」，生成 5 个风格各异、吸引人的小红书标题。
-${suggestion ? `优化要求：${suggestion}` : ''}
+${suggestion ? `优化要求：${suggestion}` : ''}${bodyRef}
 
 【核心公式】emoji(1-2个) + 诉求词 + 核心词 + 效果承诺
 
@@ -127,6 +130,8 @@ ${suggestion ? `优化要求：${suggestion}` : ''}
 - 第3个：强调营养/健康卖点，加具体数字或场景
 - 第4个：反向/悬念角度（如"没想到XX原来这么好吃""一直吃错了XX"）
 - 第5个：情感共鸣角度（如"每周必做""减脂期救星""越来越爱吃"）
+
+【重要：标题必须与参考正文内容高度关联，提炼正文中的具体卖点、步骤亮点或数据】
 
 【强制规范】
 - 每个标题必须含 1-2 个 emoji，放在开头

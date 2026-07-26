@@ -5,13 +5,14 @@ import { useState } from 'react'
 interface TitlesSectionProps {
   titles: string[]
   topic: string
+  body?: string
   onUpdate: (titles: string[]) => void
   optimizeCount: number
   optimizeLimit: number
   onOptimize: () => void
 }
 
-export function TitlesSection({ titles, topic, onUpdate, optimizeCount, optimizeLimit, onOptimize }: TitlesSectionProps) {
+export function TitlesSection({ titles, topic, body, onUpdate, optimizeCount, optimizeLimit, onOptimize }: TitlesSectionProps) {
   const [selected, setSelected] = useState<number | null>(0)
   const [suggestion, setSuggestion] = useState('')
   const [loading, setLoading] = useState(false)
@@ -25,7 +26,7 @@ export function TitlesSection({ titles, topic, onUpdate, optimizeCount, optimize
       const res = await fetch('/api/generate/regenerate-titles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, suggestion }),
+        body: JSON.stringify({ topic, suggestion, bodyContent: body }),
       })
       const data = await res.json()
       if (data.titles) {

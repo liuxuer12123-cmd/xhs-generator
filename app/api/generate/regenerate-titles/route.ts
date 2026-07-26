@@ -5,7 +5,7 @@ import { callLlm, buildTitlesPrompt } from '@/lib/llm'
 
 export async function POST(req: Request) {
   try {
-    const { topic, suggestion } = await req.json()
+    const { topic, suggestion, bodyContent } = await req.json()
     if (!topic) {
       return NextResponse.json({ error: '缺少主题' }, { status: 400 })
     }
@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     const session = await getServerSession(authOptions)
     const userId = session?.user?.id || null
 
-    const titlesRaw = await callLlm(buildTitlesPrompt(topic, suggestion), userId)
+    const titlesRaw = await callLlm(buildTitlesPrompt(topic, bodyContent, suggestion), userId)
 
     let titles: string[] = []
     try {

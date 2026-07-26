@@ -295,6 +295,7 @@ export default function Home() {
                   <TitlesSection
                     titles={result.titles}
                     topic={result.topic}
+                    body={result.body}
                     onUpdate={(titles) => setResult((prev) => prev ? { ...prev, titles } : prev)}
                     optimizeCount={optimizeCounts.titles}
                     optimizeLimit={optimizeUnlimited ? Infinity : optimizeLimit}

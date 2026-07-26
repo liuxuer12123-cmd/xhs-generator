@@ -98,11 +98,14 @@ export async function POST(req: Request) {
     }
 
     // ===== LLM generation =====
-    const [cardHtml, titlesRaw, body] = await Promise.all([
+    // Step 1: 并行生成图文和正文
+    const [cardHtml, body] = await Promise.all([
       callLlm(buildCardPrompt(topic, extraContent || '', template.description), userId),
-      callLlm(buildTitlesPrompt(topic), userId),
       callLlm(buildBodyPrompt(topic, extraContent || ''), userId),
     ])
+
+    // Step 2: 基于正文内容生成标题（确保标题与内容一致）
+    const titlesRaw = await callLlm(buildTitlesPrompt(topic, body), userId)
 
     // Parse titles JSON
     let titles: string[] = []
