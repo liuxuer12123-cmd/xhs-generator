@@ -11,6 +11,9 @@ import {
 } from '@/lib/llm'
 import { getTemplateById } from '@/lib/templates'
 
+// 允许推理模型（如 deepseek-v4-pro）有足够时间生成内容
+export const maxDuration = 300
+
 const GUEST_LIMIT = 3
 const USER_FREE_LIMIT = 10
 const ADMIN_EMAIL = 'admin'

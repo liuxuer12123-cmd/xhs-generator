@@ -49,6 +49,8 @@ export async function callLlm(
       ],
       temperature: 0.7,
     }),
+    // 推理模型（如 deepseek-v4-pro）需要较长思考时间，设置 5 分钟超时
+    signal: AbortSignal.timeout(300000),
   })
 
   if (!response.ok) {
