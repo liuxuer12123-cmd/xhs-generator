@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useSession } from 'next-auth/react'
 
 const CARD_WIDTH = 1080
 
@@ -9,13 +8,14 @@ interface CardSectionProps {
   cardHtml: string
   templateId: string
   onUpdate: (html: string) => void
+  versions: string[]
+  onRevert: (idx: number) => void
   optimizeCount: number
   optimizeLimit: number
   onOptimize: () => void
 }
 
-export function CardSection({ cardHtml, templateId, onUpdate, optimizeCount, optimizeLimit, onOptimize }: CardSectionProps) {
-  const { data: session } = useSession()
+export function CardSection({ cardHtml, templateId, onUpdate, versions, onRevert, optimizeCount, optimizeLimit, onOptimize }: CardSectionProps) {
   const [suggestion, setSuggestion] = useState('')
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -23,34 +23,7 @@ export function CardSection({ cardHtml, templateId, onUpdate, optimizeCount, opt
   const wrapperRef = useRef<HTMLDivElement>(null)
   const [iframeHeight, setIframeHeight] = useState(1440)
   const [scale, setScale] = useState(0.5)
-
-  // Version history (only for logged-in users)
-  const [history, setHistory] = useState<string[]>([])
   const [showHistory, setShowHistory] = useState(false)
-
-  // When cardHtml changes from outside (new generation), reset history
-  const prevCardRef = useRef<string>('')
-  useEffect(() => {
-    if (cardHtml !== prevCardRef.current) {
-      prevCardRef.current = cardHtml
-      setHistory([]) // new generation resets history
-    }
-  }, [cardHtml])
-
-  const updateCard = useCallback((newHtml: string) => {
-    if (session) {
-      setHistory((prev) => [...prev, cardHtml]) // save current to history before update
-    }
-    prevCardRef.current = newHtml
-    onUpdate(newHtml)
-  }, [cardHtml, onUpdate, session])
-
-  const revertTo = (html: string, idx: number) => {
-    prevCardRef.current = html
-    onUpdate(html)
-    setHistory((prev) => prev.slice(0, idx))
-    setShowHistory(false)
-  }
 
   // Scale
   const updateScale = useCallback(() => {
@@ -105,8 +78,8 @@ export function CardSection({ cardHtml, templateId, onUpdate, optimizeCount, opt
       })
       const data = await res.json()
       if (data.cardHtml) {
-        onOptimize()  // increment count in parent
-        updateCard(data.cardHtml)
+        onOptimize()
+        onUpdate(data.cardHtml)
         setSuggestion('')
       }
     } finally {
@@ -149,13 +122,12 @@ export function CardSection({ cardHtml, templateId, onUpdate, optimizeCount, opt
           <span className="text-xs text-gray-400 font-normal">（1080px 原尺寸，预览已缩放）</span>
         </h2>
         <div className="flex items-center gap-2">
-          {/* Version history button — logged in only */}
-          {session && history.length > 0 && (
+          {versions.length > 0 && (
             <button
               onClick={() => setShowHistory((v) => !v)}
               className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 px-2.5 py-1.5 border border-gray-200 rounded-full hover:border-gray-300 transition-colors"
             >
-              🕐 历史版本 ({history.length})
+              🕐 历史版本 ({versions.length})
             </button>
           )}
           <button
@@ -169,14 +141,14 @@ export function CardSection({ cardHtml, templateId, onUpdate, optimizeCount, opt
       </div>
 
       {/* Version history panel */}
-      {showHistory && session && history.length > 0 && (
+      {showHistory && versions.length > 0 && (
         <div className="mb-3 border border-amber-100 rounded-xl bg-amber-50 p-3">
           <p className="text-xs font-medium text-amber-700 mb-2">📋 历史版本（点击回退）</p>
           <div className="space-y-1.5 max-h-40 overflow-y-auto">
-            {history.map((_, idx) => (
+            {versions.map((_, idx) => (
               <button
                 key={idx}
-                onClick={() => revertTo(history[idx], idx)}
+                onClick={() => { onRevert(idx); setShowHistory(false) }}
                 className="w-full text-left px-3 py-2 bg-white hover:bg-amber-100 border border-amber-100 rounded-lg text-xs text-amber-800 transition-colors"
               >
                 版本 {idx + 1}
@@ -236,7 +208,6 @@ export function CardSection({ cardHtml, templateId, onUpdate, optimizeCount, opt
           {loading ? '优化中...' : '优化'}
         </button>
       </div>
-      {/* Optimize limit indicator */}
       {optimizeLimit !== Infinity && (
         <div className={`mt-2 text-xs text-center ${optimizeCount >= optimizeLimit ? 'text-red-400' : 'text-gray-400'}`}>
           {optimizeCount >= optimizeLimit
@@ -244,13 +215,6 @@ export function CardSection({ cardHtml, templateId, onUpdate, optimizeCount, opt
             : `图文优化次数：${optimizeCount}/${optimizeLimit}`
           }
         </div>
-      )}
-
-      {/* Login hint */}
-      {!session && (
-        <p className="mt-2 text-xs text-gray-400 text-center">
-          <a href="/login" className="text-brand hover:underline">登录</a>后可保存版本历史，随时回退
-        </p>
       )}
     </div>
   )

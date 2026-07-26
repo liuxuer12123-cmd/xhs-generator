@@ -7,15 +7,18 @@ interface BodySectionProps {
   topic: string
   extraContent?: string
   onUpdate: (body: string) => void
+  versions: string[]
+  onRevert: (idx: number) => void
   optimizeCount: number
   optimizeLimit: number
   onOptimize: () => void
 }
 
-export function BodySection({ body, topic, extraContent, onUpdate, optimizeCount, optimizeLimit, onOptimize }: BodySectionProps) {
+export function BodySection({ body, topic, extraContent, onUpdate, versions, onRevert, optimizeCount, optimizeLimit, onOptimize }: BodySectionProps) {
   const [suggestion, setSuggestion] = useState('')
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
 
   const handleOptimize = async () => {
     if (!suggestion.trim()) return
@@ -30,7 +33,7 @@ export function BodySection({ body, topic, extraContent, onUpdate, optimizeCount
       })
       const data = await res.json()
       if (data.body) {
-        onOptimize()  // increment count in parent
+        onOptimize()
         onUpdate(data.body)
         setSuggestion('')
       }
@@ -51,13 +54,42 @@ export function BodySection({ body, topic, extraContent, onUpdate, optimizeCount
         <h2 className="font-semibold text-gray-800 flex items-center gap-2">
           <span className="text-lg">📝</span> 正文
         </h2>
-        <button
-          onClick={handleCopy}
-          className="text-xs text-gray-400 hover:text-gray-600 px-3 py-1.5 border border-gray-200 rounded-full hover:border-gray-300 transition-colors"
-        >
-          {copied ? '✓ 已复制' : '复制正文'}
-        </button>
+        <div className="flex items-center gap-2">
+          {versions.length > 0 && (
+            <button
+              onClick={() => setShowHistory((v) => !v)}
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 px-2.5 py-1.5 border border-gray-200 rounded-full hover:border-gray-300 transition-colors"
+            >
+              🕐 历史版本 ({versions.length})
+            </button>
+          )}
+          <button
+            onClick={handleCopy}
+            className="text-xs text-gray-400 hover:text-gray-600 px-3 py-1.5 border border-gray-200 rounded-full hover:border-gray-300 transition-colors"
+          >
+            {copied ? '✓ 已复制' : '复制正文'}
+          </button>
+        </div>
       </div>
+
+      {/* Version history panel */}
+      {showHistory && versions.length > 0 && (
+        <div className="mb-3 border border-amber-100 rounded-xl bg-amber-50 p-3">
+          <p className="text-xs font-medium text-amber-700 mb-2">📋 历史版本（点击回退）</p>
+          <div className="space-y-1.5 max-h-36 overflow-y-auto">
+            {versions.map((v, idx) => (
+              <button
+                key={idx}
+                onClick={() => { onRevert(idx); setShowHistory(false) }}
+                className="w-full text-left px-3 py-2 bg-white hover:bg-amber-100 border border-amber-100 rounded-lg text-xs text-amber-800 transition-colors"
+              >
+                版本 {idx + 1}：{v.slice(0, 30)}...
+                <span className="text-amber-400 ml-2">← 回退</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap min-h-[120px] mb-4">
         {body}
@@ -80,7 +112,6 @@ export function BodySection({ body, topic, extraContent, onUpdate, optimizeCount
           {loading ? '优化中...' : '优化'}
         </button>
       </div>
-      {/* Optimize limit indicator */}
       {optimizeLimit !== Infinity && (
         <div className={`mt-2 text-xs text-center ${optimizeCount >= optimizeLimit ? 'text-red-400' : 'text-gray-400'}`}>
           {optimizeCount >= optimizeLimit

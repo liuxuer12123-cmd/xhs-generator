@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { Navbar, HistoryItem } from '@/components/Navbar'
 import { CardSection } from '@/components/CardSection'
@@ -18,7 +18,6 @@ interface GenerationResult {
   templateId: string
 }
 
-// Optimize counts per section, reset on each new generation
 interface OptimizeCounts {
   card: number
   titles: number
@@ -33,6 +32,8 @@ interface UsageInfo {
   remaining?: number
 }
 
+const STORAGE_KEY = 'xhs-generator-state'
+
 export default function Home() {
   const { data: session } = useSession()
   const [topic, setTopic] = useState('')
@@ -44,17 +45,50 @@ export default function Home() {
   const [error, setError] = useState('')
   const [result, setResult] = useState<GenerationResult | null>(null)
   const [usageInfo, setUsageInfo] = useState<UsageInfo | null>(null)
-  // Optimize counts: reset on each new generation
   const [optimizeCounts, setOptimizeCounts] = useState<OptimizeCounts>({ card: 0, titles: 0, body: 0 })
 
-  // Limits: guest=3, logged-in (no custom API)=5, admin/custom API=unlimited
+  // Version histories (persisted to localStorage)
+  const [cardVersions, setCardVersions] = useState<string[]>([])
+  const [titlesVersions, setTitlesVersions] = useState<string[][]>([])
+  const [bodyVersions, setBodyVersions] = useState<string[]>([])
+
+  // Restore from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (!saved) return
+      const state = JSON.parse(saved)
+      if (state.result) setResult(state.result)
+      if (state.topic) setTopic(state.topic)
+      if (state.extraContent) setExtraContent(state.extraContent)
+      if (state.selectedTemplate) setSelectedTemplate(state.selectedTemplate)
+      if (state.cardVersions) setCardVersions(state.cardVersions)
+      if (state.titlesVersions) setTitlesVersions(state.titlesVersions)
+      if (state.bodyVersions) setBodyVersions(state.bodyVersions)
+    } catch {}
+  }, [])
+
+  // Persist to localStorage whenever state changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        result,
+        topic,
+        extraContent,
+        selectedTemplate,
+        cardVersions,
+        titlesVersions,
+        bodyVersions,
+      }))
+    } catch {}
+  }, [result, topic, extraContent, selectedTemplate, cardVersions, titlesVersions, bodyVersions])
+
   const ADMIN_USERNAME = 'admin'
   const isAdmin = session?.user?.name === ADMIN_USERNAME
-  const hasCustomApi = usageInfo?.unlimited && !!session  // unlimited + logged-in means custom API or admin
+  const hasCustomApi = usageInfo?.unlimited && !!session
   const optimizeUnlimited = isAdmin || hasCustomApi
   const optimizeLimit = session ? 5 : 3
 
-  // Fetch usage info on mount and after session changes
   useEffect(() => {
     fetch('/api/usage')
       .then((r) => r.json())
@@ -62,6 +96,57 @@ export default function Home() {
       .catch(() => {})
   }, [session])
 
+  // ===== Update handlers (save version before update) =====
+  const handleCardUpdate = useCallback((html: string) => {
+    setResult(prev => {
+      if (!prev) return prev
+      setCardVersions(v => [...v.slice(-4), prev.cardHtml])
+      return { ...prev, cardHtml: html }
+    })
+  }, [])
+
+  const handleTitlesUpdate = useCallback((titles: string[]) => {
+    setResult(prev => {
+      if (!prev) return prev
+      setTitlesVersions(v => [...v.slice(-4), prev.titles])
+      return { ...prev, titles }
+    })
+  }, [])
+
+  const handleBodyUpdate = useCallback((body: string) => {
+    setResult(prev => {
+      if (!prev) return prev
+      setBodyVersions(v => [...v.slice(-4), prev.body])
+      return { ...prev, body }
+    })
+  }, [])
+
+  // ===== Revert handlers =====
+  const handleCardRevert = useCallback((idx: number) => {
+    setCardVersions(v => {
+      const target = v[idx]
+      setResult(prev => prev ? { ...prev, cardHtml: target } : prev)
+      return v.slice(0, idx)
+    })
+  }, [])
+
+  const handleTitlesRevert = useCallback((idx: number) => {
+    setTitlesVersions(v => {
+      const target = v[idx]
+      setResult(prev => prev ? { ...prev, titles: target } : prev)
+      return v.slice(0, idx)
+    })
+  }, [])
+
+  const handleBodyRevert = useCallback((idx: number) => {
+    setBodyVersions(v => {
+      const target = v[idx]
+      setResult(prev => prev ? { ...prev, body: target } : prev)
+      return v.slice(0, idx)
+    })
+  }, [])
+
+  // ===== Generate =====
   const handleGenerate = async () => {
     if (!topic || !selectedTemplate) return
     setLoading(true)
@@ -79,13 +164,14 @@ export default function Home() {
       const data = await res.json()
       if (!res.ok) {
         setError(data.error || '生成失败，请重试')
-        // Refresh usage after limit hit
         fetch('/api/usage').then((r) => r.json()).then(setUsageInfo).catch(() => {})
         return
       }
       setResult({ ...data, topic, extraContent, templateId: selectedTemplate })
-      setOptimizeCounts({ card: 0, titles: 0, body: 0 })  // reset optimize counts on new generation
-      // Refresh usage after successful generation
+      setOptimizeCounts({ card: 0, titles: 0, body: 0 })
+      setCardVersions([])
+      setTitlesVersions([])
+      setBodyVersions([])
       fetch('/api/usage').then((r) => r.json()).then(setUsageInfo).catch(() => {})
     } catch {
       setError('网络错误，请重试')
@@ -111,7 +197,10 @@ export default function Home() {
       extraContent: item.extraContent || '',
       templateId: item.templateId,
     })
-    setOptimizeCounts({ card: 0, titles: 0, body: 0 })  // reset on load history
+    setOptimizeCounts({ card: 0, titles: 0, body: 0 })
+    setCardVersions([])
+    setTitlesVersions([])
+    setBodyVersions([])
   }
 
   const isLimitReached = usageInfo && !usageInfo.unlimited && (usageInfo.remaining ?? 1) <= 0
@@ -128,7 +217,6 @@ export default function Home() {
     <div className="h-screen bg-[#f5f5f7] flex flex-col overflow-hidden">
       <Navbar onLoadHistory={handleLoadHistory} />
 
-      {/* Login banner */}
       {!session && (
         <div className="bg-amber-50 border-b border-amber-100 px-6 py-2 text-sm text-amber-700 flex items-center justify-center gap-2">
           <span>📢 <strong>登录后</strong>可保存生成历史</span>
@@ -136,14 +224,12 @@ export default function Home() {
         </div>
       )}
 
-      {/* Main layout: left + right */}
       <div className="flex flex-1 min-h-0" style={{ overflow: 'hidden' }}>
 
-        {/* ===== LEFT PANEL: Input ===== */}
+        {/* ===== LEFT PANEL ===== */}
         <div className="w-[480px] flex-shrink-0 bg-white border-r border-gray-100 flex flex-col" style={{ overflowY: 'auto', overflowX: 'hidden' }}>
           <div className="p-7 flex flex-col gap-6 flex-1">
 
-            {/* Topic */}
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">帖子主题 *</label>
               <input
@@ -155,7 +241,6 @@ export default function Home() {
               />
             </div>
 
-            {/* Extra content */}
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">补充内容 <span className="text-gray-300 font-normal normal-case">（可选）</span></label>
               <textarea
@@ -167,7 +252,6 @@ export default function Home() {
               />
             </div>
 
-            {/* Template selector */}
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-3 uppercase tracking-wide">选择模板</label>
               <div className="grid grid-cols-2 gap-3">
@@ -203,14 +287,12 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Error */}
             {error && (
               <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2 text-xs text-red-600">
                 ⚠️ {error}
               </div>
             )}
 
-            {/* Usage badge + limit reached tip */}
             {usageBadge && (
               <div className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium ${usageBadge.color}`}>
                 {usageInfo?.remaining === 0 ? '🚫' : '⚡'} {usageBadge.text}
@@ -228,7 +310,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Generate button */}
             <button
               onClick={handleGenerate}
               disabled={!topic || !selectedTemplate || loading || !!isLimitReached}
@@ -248,17 +329,15 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ===== RIGHT PANEL: Results ===== */}
+        {/* ===== RIGHT PANEL ===== */}
         <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
           {!result && !loading ? (
-            /* Empty state */
             <div className="h-full flex flex-col items-center justify-center text-center px-8 select-none">
               <div className="text-6xl mb-4 opacity-20">📖</div>
               <p className="text-gray-400 text-sm">填写左侧主题，选择模板</p>
               <p className="text-gray-300 text-xs mt-1">点击「生成帖子」开始创作</p>
             </div>
           ) : loading ? (
-            /* Loading state */
             <div className="h-full flex flex-col items-center justify-center gap-4">
               <div className="w-10 h-10 border-3 border-brand border-t-transparent rounded-full animate-spin" style={{ borderWidth: 3 }} />
               <p className="text-sm text-gray-500 font-medium">AI 正在为你创作中...</p>
@@ -276,27 +355,30 @@ export default function Home() {
               </div>
             </div>
           ) : result ? (
-            /* Results — two-column: card left, titles+body right */
             <div className="flex h-full min-h-0">
               {/* Left: Card */}
               <div className="flex-1 min-w-0 overflow-y-auto px-5 py-5">
                 <CardSection
                   cardHtml={result.cardHtml}
                   templateId={result.templateId}
-                  onUpdate={(html) => setResult((prev) => prev ? { ...prev, cardHtml: html } : prev)}
+                  onUpdate={handleCardUpdate}
+                  versions={cardVersions}
+                  onRevert={handleCardRevert}
                   optimizeCount={optimizeCounts.card}
                   optimizeLimit={optimizeUnlimited ? Infinity : optimizeLimit}
                   onOptimize={() => setOptimizeCounts((prev) => ({ ...prev, card: prev.card + 1 }))}
                 />
               </div>
-              {/* Right: Titles + Body stacked */}
+              {/* Right: Titles + Body */}
               <div className="w-[400px] flex-shrink-0 flex flex-col overflow-y-auto border-l border-gray-100">
                 <div className="px-4 py-5 border-b border-gray-100">
                   <TitlesSection
                     titles={result.titles}
                     topic={result.topic}
                     body={result.body}
-                    onUpdate={(titles) => setResult((prev) => prev ? { ...prev, titles } : prev)}
+                    onUpdate={handleTitlesUpdate}
+                    versions={titlesVersions}
+                    onRevert={handleTitlesRevert}
                     optimizeCount={optimizeCounts.titles}
                     optimizeLimit={optimizeUnlimited ? Infinity : optimizeLimit}
                     onOptimize={() => setOptimizeCounts((prev) => ({ ...prev, titles: prev.titles + 1 }))}
@@ -307,7 +389,9 @@ export default function Home() {
                     body={result.body}
                     topic={result.topic}
                     extraContent={result.extraContent}
-                    onUpdate={(body) => setResult((prev) => prev ? { ...prev, body } : prev)}
+                    onUpdate={handleBodyUpdate}
+                    versions={bodyVersions}
+                    onRevert={handleBodyRevert}
                     optimizeCount={optimizeCounts.body}
                     optimizeLimit={optimizeUnlimited ? Infinity : optimizeLimit}
                     onOptimize={() => setOptimizeCounts((prev) => ({ ...prev, body: prev.body + 1 }))}
