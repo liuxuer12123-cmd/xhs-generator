@@ -24,7 +24,7 @@ async function getLlmConfig(userId?: string | null): Promise<LlmConfig> {
   return {
     baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
     apiKey: process.env.DEEPSEEK_API_KEY || '',
-    modelName: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+    modelName: process.env.DEEPSEEK_MODEL || 'deepseek-v4-pro',
   }
 }
 
