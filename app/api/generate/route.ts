@@ -8,6 +8,7 @@ import {
   buildCardPrompt,
   buildTitlesPrompt,
   buildBodyPrompt,
+  isWeightLossTopic,
 } from '@/lib/llm'
 import { getTemplateById } from '@/lib/templates'
 
@@ -98,10 +99,13 @@ export async function POST(req: Request) {
     }
 
     // ===== LLM generation =====
+    // 检测主题是否与减脂/管理体重相关，启用热量侦探模式
+    const weightLoss = isWeightLossTopic(topic)
+
     // Step 1: 并行生成图文和正文
     const [cardHtml, body] = await Promise.all([
-      callLlm(buildCardPrompt(topic, extraContent || '', template.description), userId),
-      callLlm(buildBodyPrompt(topic, extraContent || ''), userId),
+      callLlm(buildCardPrompt(topic, extraContent || '', template.description, weightLoss), userId),
+      callLlm(buildBodyPrompt(topic, extraContent || '', undefined, weightLoss), userId),
     ])
 
     // Step 2: 基于正文内容生成标题（确保标题与内容一致）

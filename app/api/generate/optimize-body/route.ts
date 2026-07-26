@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { callLlm, buildBodyPrompt } from '@/lib/llm'
+import { callLlm, buildBodyPrompt, isWeightLossTopic } from '@/lib/llm'
 
 export async function POST(req: Request) {
   try {
@@ -13,7 +13,8 @@ export async function POST(req: Request) {
     const session = await getServerSession(authOptions)
     const userId = session?.user?.id || null
 
-    const prompt = `${buildBodyPrompt(topic || '', extraContent || '', suggestion)}
+    const weightLoss = isWeightLossTopic(topic || '')
+    const prompt = `${buildBodyPrompt(topic || '', extraContent || '', suggestion, weightLoss)}
 
 当前正文（请在此基础上优化）：
 ${originalBody}`

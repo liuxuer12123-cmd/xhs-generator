@@ -88,7 +88,8 @@ export async function callLlm(
 export function buildCardPrompt(
   topic: string,
   extraContent: string,
-  templateDescription: string
+  templateDescription: string,
+  isWeightLoss?: boolean
 ): string {
   return `你是一个小红书图文内容创作专家，擅长生成精美的小红书竖版信息图。
 根据以下信息，生成符合指定模板风格的小红书信息图（HTML+CSS）。
@@ -96,6 +97,14 @@ export function buildCardPrompt(
 主题：${topic}
 补充内容（仅作参考素材，需提炼语言、优化表达，不要直接抄写原文）：${extraContent || '无'}
 模板风格：${templateDescription}
+${isWeightLoss ? `
+【🔥 热量侦探模式 — 减脂/减重主题专属】
+本帖主题与管理体重/低卡饮食相关，请在卡片中安排一个「营养参考」区块，展示核心食材的热量估算：
+- 列出 3-5 种主要食材，格式：食材名 | 每100g约 XX 大卡 | 蛋白质 Xg / 碳水 Xg / 脂肪 Xg
+- 区块标题用：🔥 热量参考（每100g）
+- 文字小巧精炼，放在卡片底部或独立一张卡，风格与整体协调
+- 热量数据参考：米饭130kcal 鸡胸肉165kcal 鸡蛋155kcal 虾106kcal 青菜20kcal 豆腐80kcal 燕麦389kcal 牛油果160kcal
+` : ''}
 ${COMPLIANCE_RULES}
 
 【⚠️ 关键尺寸要求 — 必须严格执行】
@@ -168,11 +177,20 @@ ${COMPLIANCE_RULES}
 export function buildBodyPrompt(
   topic: string,
   extraContent: string,
-  suggestion?: string
+  suggestion?: string,
+  isWeightLoss?: boolean
 ): string {
   return `你是小红书正文写作专家。
 根据主题「${topic}」和补充内容「${extraContent || '无'}」，生成一篇小红书正文。
 ${suggestion ? `优化要求：${suggestion}` : ''}
+${isWeightLoss ? `
+【🔥 热量侦探模式 — 减脂主题专属要求】
+本帖主题与管理体重/低卡饮食相关，正文中需包含：
+1. 核心食材的热量/营养数据小科普（格式：「每100g约XX大卡，蛋白质Xg」），至少提及2-3种主要食材
+2. 一个「低卡小技巧」或「减脂替换」的实用建议（如「用鸡胸肉代替五花肉，热量减半」）
+3. 参考热量数据：鸡胸肉165kcal 虾106kcal 鸡蛋155kcal 豆腐80kcal 燕麦389kcal 牛油果160kcal 米饭130kcal 番茄18kcal 黄瓜16kcal 西兰花34kcal（每100g）
+注意：所有数字前加「约」字，以合规表达呈现（如「低卡配餐」而非「减肥餐」）
+` : ''}
 
 【内容规范】
 - 字数：300-500字（食谱/教程类）或 400-600字（科普/分享类）
@@ -197,4 +215,17 @@ ${suggestion ? `优化要求：${suggestion}` : ''}
 
 ${COMPLIANCE_RULES}
 只输出正文内容（含末尾标签），不要标题，不要任何解释。`
+}
+
+// ===== 热量侦探：减脂/减重主题检测 =====
+// 检测主题是否与管理体重、低卡饮食相关
+export function isWeightLossTopic(topic: string): boolean {
+  const keywords = [
+    '减脂', '减重', '管理体重', '低卡', '低热量', '卡路里', '热量',
+    '瘦身餐', '健身餐', '减脂餐', '控脂', '燃脂', '纤体', '轻食',
+    '控糖', '低碳', '生酮', '增肌', '体脂', '塑形',
+    '减肥', '减体重', '体重管理', '瘦', '纤细',
+  ]
+  const lowerTopic = topic.toLowerCase()
+  return keywords.some(kw => lowerTopic.includes(kw))
 }
