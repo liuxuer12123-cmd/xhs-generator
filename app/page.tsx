@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { Navbar, HistoryItem } from '@/components/Navbar'
 import { CardSection } from '@/components/CardSection'
@@ -39,6 +39,8 @@ export default function Home() {
   const [extraContent, setExtraContent] = useState('')
   const [selectedTemplate, setSelectedTemplate] = useState('template-recipe')
   const [loading, setLoading] = useState(false)
+  const [loadingSeconds, setLoadingSeconds] = useState(0)
+  const loadingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [error, setError] = useState('')
   const [result, setResult] = useState<GenerationResult | null>(null)
   const [usageInfo, setUsageInfo] = useState<UsageInfo | null>(null)
@@ -63,7 +65,11 @@ export default function Home() {
   const handleGenerate = async () => {
     if (!topic || !selectedTemplate) return
     setLoading(true)
+    setLoadingSeconds(0)
     setError('')
+    loadingTimerRef.current = setInterval(() => {
+      setLoadingSeconds((s) => s + 1)
+    }, 1000)
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
@@ -85,6 +91,11 @@ export default function Home() {
       setError('网络错误，请重试')
     } finally {
       setLoading(false)
+      setLoadingSeconds(0)
+      if (loadingTimerRef.current) {
+        clearInterval(loadingTimerRef.current)
+        loadingTimerRef.current = null
+      }
     }
   }
 
@@ -229,7 +240,7 @@ export default function Home() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  AI 生成中...
+                  AI 生成中... {loadingSeconds > 0 && `(${loadingSeconds}s)`}
                 </>
               ) : isLimitReached ? '🚫 次数已用完' : '✨ 生成帖子'}
             </button>
@@ -250,7 +261,19 @@ export default function Home() {
             /* Loading state */
             <div className="h-full flex flex-col items-center justify-center gap-4">
               <div className="w-10 h-10 border-3 border-brand border-t-transparent rounded-full animate-spin" style={{ borderWidth: 3 }} />
-              <p className="text-sm text-gray-400">AI 正在为你创作中...</p>
+              <p className="text-sm text-gray-500 font-medium">AI 正在为你创作中...</p>
+              <div className="text-center">
+                <p className="text-xs text-gray-400">
+                  已等待 <span className="font-semibold text-brand">{loadingSeconds}</span> 秒
+                </p>
+                <p className="text-xs text-gray-300 mt-1">
+                  {loadingSeconds < 30
+                    ? '预计需要 30～120 秒，请耐心等待 ☕'
+                    : loadingSeconds < 90
+                    ? '思考内容中，快好了～'
+                    : '内容较复杂，马上就来 🚀'}
+                </p>
+              </div>
             </div>
           ) : result ? (
             /* Results — two-column: card left, titles+body right */
