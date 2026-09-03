@@ -17,6 +17,7 @@
 - [使用限制规则](#-使用限制规则)
 - [项目开发流程记录](#-项目开发流程记录)
 - [踩坑与解决方案](#-踩坑与解决方案)
+- [AI Skill 集成说明](#-ai-skill-集成说明)
 
 ---
 
@@ -33,14 +34,18 @@
 | 功能 | 说明 |
 |------|------|
 | 🎨 4 种模板 | 清新食谱风 / 干货合集风 / 科普知识风 / 日记分享风 |
-| ⚡ AI 一键生成 | 图文卡片 + 5 个标题 + 正文，三路并发同步生成 |
+| ⚡ AI 一键生成 | 图文卡片 + 正文并行生成，再基于正文生成关联标题，保证三块内容高度一致 |
 | 📐 规范图文 | 1080×1440px（3:4），多卡片自动裁切，严格内联样式 |
 | ✏️ 独立优化 | 图文/标题/正文可单独输入建议进行优化 |
-| 🕐 版本历史 | 登录用户每次优化前自动保存，可随时回退 |
+| 🕐 版本历史 | 三个板块均自动保存版本历史，刷新后不丢失，可随时回退 |
 | 📥 PNG 导出 | 导出原始 1080px 宽高清图片（html2canvas） |
 | 🔢 次数管控 | 游客生成 3 次 / 登录用户 10 次 / 配置自己的 API 则无限制 |
 | 🔑 自定义 LLM | 支持在设置中填入 OpenAI 兼容格式的 API Key |
 | 📚 历史记录 | 登录用户可查看并加载历史生成的帖子 |
+| 🏷️ 话题标签 | 正文末尾自动生成 12-15 个三层结构话题标签（核心词 + 场景词 + 长尾词） |
+| 🛡️ 合规过滤 | 内置小红书/广告法违禁词规则，生成时主动规避（集成 health-content-checker） |
+| 🔥 热量侦探 | 减脂/低卡相关主题自动触发，图文卡片增加营养参考区块，正文内嵌食材卡路里数据（集成 calorie-detective） |
+| ⏱️ 生成计时 | 生成过程实时显示已等待秒数，提升等待体验 |
 
 ---
 
@@ -276,6 +281,10 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_cache_bypass $http_upgrade;
+        # 推理模型响应较慢，超时需延长到 5 分钟
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 300s;
     }
 }
 ```
@@ -403,13 +412,16 @@ model GuestUsage {
 【输出规范】只输出完整 HTML 文档，所有样式内联，不要任何解释，不要 ``` 标记
 ```
 
-三路并发生成（`Promise.all`）：
+三路并发改为：先并行生成图文 + 正文，再基于正文生成关联标题（`Promise.all` → sequential titles）：
 ```typescript
-const [cardHtml, titlesRaw, body] = await Promise.all([
-  callLlm(buildCardPrompt(...), userId),
-  callLlm(buildTitlesPrompt(...), userId),
-  callLlm(buildBodyPrompt(...), userId),
+// Step 1: 并行生成图文和正文
+const [cardHtml, body] = await Promise.all([
+  callLlm(buildCardPrompt(..., isWeightLoss), userId),
+  callLlm(buildBodyPrompt(..., isWeightLoss), userId),
 ])
+
+// Step 2: 基于正文内容生成标题，确保标题与内容高度一致
+const titlesRaw = await callLlm(buildTitlesPrompt(topic, body), userId)
 ```
 
 ### Phase 4：认证系统
@@ -621,6 +633,68 @@ git filter-branch --tree-filter \
 # 强制推送
 git push origin main --force
 ```
+
+### 11. 生成接口报"网络错误"：Nginx 60s 超时
+
+**原因**：DeepSeek 推理模型（deepseek-v4-pro）思考时间可达 1~3 分钟，Nginx 默认 `proxy_read_timeout` 仅 60s，连接被提前断开。
+
+**解决**：三层超时同步修改：
+```nginx
+# /etc/nginx/sites-available/xhs-generator
+location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_read_timeout 300s;
+    proxy_connect_timeout 10s;
+    proxy_send_timeout 300s;
+}
+```
+```typescript
+// lib/llm.ts：Node.js fetch 层面超时
+signal: AbortSignal.timeout(300000)
+
+// app/api/generate/route.ts：Next.js App Router 超时
+export const maxDuration = 300
+```
+
+### 12. 版本历史刷新后丢失
+
+**原因**：版本历史只存在 React 组件 state 中，刷新页面即清空。
+
+**解决**：将所有版本数组（`cardVersions`、`titlesVersions`、`bodyVersions`）和当前结果一并序列化到 `localStorage`，页面加载时恢复：
+```typescript
+const STORAGE_KEY = 'xhs-generator-state'
+
+// 挂载时恢复
+useEffect(() => {
+  const saved = localStorage.getItem(STORAGE_KEY)
+  if (saved) {
+    const state = JSON.parse(saved)
+    setResult(state.result)
+    setCardVersions(state.cardVersions ?? [])
+    // ...
+  }
+}, [])
+
+// 状态变更时持久化
+useEffect(() => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ result, cardVersions, titlesVersions, bodyVersions, ... }))
+}, [result, cardVersions, titlesVersions, bodyVersions])
+```
+
+---
+
+## 🤖 AI Skill 集成说明
+
+本项目将 MyFlicker 平台上的三个 Skill 的核心知识内化到 Prompt 中，无需额外 API 调用：
+
+| Skill | 集成方式 | 效果 |
+|-------|---------|------|
+| `xiaohongshu-food` | 标题 Prompt 引入爆款公式（emoji词库 + 5种风格差异化 + 诉求词库） | 标题更符合小红书爆款规律 |
+| `health-content-checker` | 在图文/标题/正文三个 Prompt 中注入违禁词清单和合规替代策略 | 生成内容主动规避广告法违规词 |
+| `calorie-detective-v3-0-0` | 检测主题关键词，减脂相关主题自动注入热量数据和营养分析要求 | 减脂帖自动附带食材卡路里参考区块 |
+
+**热量侦探触发关键词**（任意命中即启用）：
+> 减脂、减重、低卡、卡路里、热量、瘦身餐、控糖、低碳、生酮、体脂、塑形、减肥、纤体、轻食...
 
 ---
 
